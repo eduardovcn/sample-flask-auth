@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from models.user import User
 from database import db
-from flask_login import LoginManager, login_user, current_user
+from flask_login import LoginManager, login_user, current_user, logout_user, login_required
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key'
@@ -14,6 +14,9 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 #Session <- conexão ativa
 
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
 @app.route('/login', methods=["POST"])
 def login():
@@ -31,9 +34,64 @@ def login():
 
     return jsonify({'message': 'Credenciais Inválidas'}), 400
 
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
+@app.route("/logout", methods=["GET"])
+@login_required
+def logout():
+    logout_user()
+    return jsonify({'message': 'Logout realizado com sucesso'})
+
+@app.route('/user', methods=["POST"])
+@login_required
+def create_user():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+
+    if username and password:
+        user = User(username=username, password=password)
+        db.session.add(user)
+        db.session.commit()
+        return jsonify({'message': 'Usuário cadastrado com sucesso'})
+        
+
+    return jsonify({'message': 'Dados inválidos'}), 400
+
+@app.route ('/user/<int:id_user>', methods=['GET']) #para mostrar o campo de senha, tenho que criptografar para proteger os dados do ususario
+@login_required
+def read_user(id_user):
+    user = User.query.get(id_user)
+    
+    if user:
+        return {"username": user.username}
+
+    return jsonify({'message': 'Usuário não encontrado'}), 404
+
+@app.route ('/user/<int:id_user>', methods=['PUT'])
+@login_required
+def update_user(id_user): #atualizando apenas a senha para nao gerar conflito de usuarios no banco
+    data = request.json
+    user = User.query.get(id_user)
+
+    if user and data.get('password'):
+        user.password = data.get('password')
+        db.session.commit()
+
+        return jsonify({'message': f'Usuário {id_user} atualizado com sucesso'})
+    
+    return jsonify({'message': 'Usuário não encontrado'}), 404
+
+@app.route ('/user/<int:id_user>', methods=['DELETE'])
+@login_required
+def delete_user(id_user):
+    user = User.query.get(id_user)
+
+    if user and user.id != current_user.id: #se o usuário que eu estou deletando for diferente do meu usuário atual, execute:
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({'message': f'Usuário {id_user} deletado com sucesso'})
+    
+    return jsonify({'message': 'Deleção não permitida'}), 403
+
 
 
 @app.route('/hello-world', methods=['GET'])
